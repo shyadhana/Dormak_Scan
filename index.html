@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#16a34a">
+<title>Door Packing Scan</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{
+    --green:#16a34a; --green-d:#15803d; --green-l:#dcfce7;
+    --red:#dc2626; --red-l:#fee2e2; --amber:#d97706; --amber-l:#fef3c7;
+    --ink:#1e293b; --mute:#64748b; --line:#e2e8f0; --bg:#f1f5f9; --card:#fff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:Arial,Helvetica,sans-serif;background:var(--bg);color:var(--ink)}
+  header{background:var(--green);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;z-index:5}
+  header h1{margin:0;font-size:18px;letter-spacing:.5px}
+  header .meta{font-size:12px;opacity:.9}
+  .hright{display:flex;align-items:center;gap:10px}
+  .gear{background:rgba(255,255,255,.18);border:none;color:#fff;border-radius:8px;padding:6px 10px;font-size:16px;cursor:pointer}
+  main{max-width:1000px;margin:0 auto;padding:16px;display:grid;gap:16px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .hidden{display:none !important}
+
+  /* Setup */
+  .setup h2{margin:0 0 6px;font-size:18px}
+  .setup p{margin:0 0 14px;color:var(--mute);font-size:14px}
+  .field{display:grid;gap:4px;margin-bottom:12px}
+  .field label{font-size:13px;font-weight:700}
+  .field input{font-size:16px;padding:12px;border:1px solid #cbd5e1;border-radius:8px}
+  .err{color:var(--red);font-size:13px;min-height:18px;margin-bottom:8px}
+
+  /* Camera */
+  .modes{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .modes .btn{flex:1;min-width:150px;text-align:center}
+  #reader{width:100%;max-width:480px;margin:0 auto 12px;border-radius:10px;overflow:hidden;background:#000}
+  #reader video{width:100% !important;height:auto !important;display:block}
+  #fileReader{display:none}
+  .camstate{text-align:center;font-size:13px;color:var(--mute);margin-bottom:10px}
+  .flash{animation:flash .35s}
+  @keyframes flash{0%{box-shadow:0 0 0 6px var(--green)}100%{box-shadow:none}}
+
+  .scanbox{display:flex;gap:8px}
+  #scanInput{flex:1;font-size:16px;padding:12px;border:2px solid var(--green);border-radius:8px;outline:none;min-width:0}
+  #scanInput:focus{box-shadow:0 0 0 3px var(--green-l)}
+  .hint{font-size:12px;color:var(--mute);margin-top:6px}
+
+  /* Label card */
+  .label{border:2px dashed #94a3b8;border-radius:8px;padding:16px 20px;position:relative}
+  .label.ok{border-color:var(--green);background:#fbfffc}
+  .label.dup{border-color:var(--red);background:var(--red-l)}
+  .label.warn{border-color:var(--amber);background:var(--amber-l)}
+  .label h2{margin:0 0 10px;color:var(--green);font-size:24px;letter-spacing:1px}
+  .label.dup h2{color:var(--red)}
+  .label.warn h2{color:var(--amber)}
+  .kv{display:grid;grid-template-columns:140px 1fr;row-gap:6px;font-size:17px}
+  .kv b{font-weight:700}
+  .status{position:absolute;top:14px;right:16px;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;background:var(--green-l);color:var(--green-d)}
+  .label.dup .status{background:#fff;color:var(--red)}
+  .label.warn .status{background:#fff;color:var(--amber)}
+  .empty{color:var(--mute);text-align:center;padding:24px 0}
+
+  /* Queue */
+  .qhead{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .qhead h3{margin:0;font-size:16px}
+  .count{background:var(--green);color:#fff;border-radius:999px;padding:2px 10px;font-size:13px;margin-left:6px}
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+  th{background:#f8fafc;font-size:12px;color:var(--mute);text-transform:uppercase}
+  td.x{text-align:center}
+  .xbtn{border:none;background:none;color:var(--red);font-size:20px;cursor:pointer}
+  .retry{border:none;background:none;color:var(--amber);font-size:11px;text-decoration:underline;cursor:pointer;padding:0}
+  .btn{border:none;border-radius:8px;padding:12px 18px;font-size:15px;font-weight:700;cursor:pointer;display:inline-block}
+  .btn-primary{background:var(--green);color:#fff}
+  .btn-primary:disabled{background:#94a3b8;cursor:not-allowed}
+  .btn-stop{background:var(--red);color:#fff}
+  .btn-ghost{background:#fff;border:1px solid var(--line);color:var(--ink)}
+  .actions{display:flex;gap:8px}
+
+  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 18px;border-radius:8px;font-size:14px;display:none;max-width:90vw;z-index:9}
+  .toast.err{background:var(--red)}
+  .toast.ok{background:var(--green-d)}
+  footer{text-align:center;font-size:11px;color:var(--mute);padding:12px}
+
+  @media (max-width:600px){
+    main{padding:10px;gap:12px}
+    .kv{grid-template-columns:110px 1fr;font-size:15px}
+    .label h2{font-size:20px}
+    .status{position:static;display:inline-block;margin-bottom:8px}
+    .actions{width:100%}
+    .actions .btn{flex:1}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>DOOR – PACKING SCAN</h1>
+  <div class="hright">
+    <div class="meta" id="userMeta">Loading…</div>
+    <button class="gear" id="gearBtn" type="button" title="Settings">⚙</button>
+  </div>
+</header>
+
+<main>
+  <!-- One-time setup -->
+  <div class="card setup hidden" id="setupCard">
+    <h2>Setup</h2>
+    <p>Enter your name and the packing PIN. This is saved on this device.</p>
+    <div class="field">
+      <label for="setName">Your name</label>
+      <input id="setName" type="text" autocomplete="name" placeholder="e.g. Ramesh">
+    </div>
+    <div class="field">
+      <label for="setPin">PIN</label>
+      <input id="setPin" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN">
+    </div>
+    <div class="err" id="setupErr"></div>
+    <button class="btn btn-primary" id="saveSetup" type="button">Save &amp; Start</button>
+  </div>
+
+  <div id="app" class="hidden" style="display:grid;gap:16px">
+    <div class="card">
+      <div class="modes">
+        <button class="btn btn-primary" id="camBtn" type="button">📷 Start Camera Scan</button>
+        <label class="btn btn-ghost" for="photoInput">🖼 Scan from Photo</label>
+        <input id="photoInput" type="file" accept="image/*" capture="environment" hidden>
+      </div>
+      <div class="camstate hidden" id="camState">Point the camera at the QR label. It scans automatically.</div>
+      <div id="reader" class="hidden"></div>
+      <div id="fileReader"></div>
+
+      <form class="scanbox" id="manualForm">
+        <input id="scanInput" type="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false"
+               placeholder="Or type Door No (e.g. DMK-003-P1)">
+        <button class="btn btn-ghost" type="submit">Add</button>
+      </form>
+      <div class="hint">Keep the camera on and show labels one by one. Same label is ignored for 3 seconds.</div>
+    </div>
+
+    <div class="card" id="lastCard">
+      <div class="empty">Scan a label to see its details here.</div>
+    </div>
+
+    <div class="card">
+      <div class="qhead">
+        <h3>Scanned (not yet submitted)<span class="count" id="qCount">0</span></h3>
+        <div class="actions">
+          <button class="btn btn-ghost" id="clearBtn" type="button">Clear All</button>
+          <button class="btn btn-primary" id="submitBtn" type="button" disabled>Submit to Sheet</button>
+        </div>
+      </div>
+      <div class="tablewrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Door No</th><th>Order No</th><th>Party</th><th>Location</th><th>Flat / Tower</th><th>Door Size</th><th>Set No</th><th></th></tr>
+          </thead>
+          <tbody id="qBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>Page <span id="uiBuild"></span> · Server <span id="srvBuild">–</span></footer>
+<div class="toast" id="toast"></div>
+
+<script>
+/* >>> PASTE your Apps Script Web App /exec URL here <<< */
+var API_URL = 'https://script.google.com/a/macros/shyadhana.com/s/AKfycbyacjVDR6RnrFYQwQYGwimtvvBNRZbuHS54XY3u7O3s3HSf_zc-AsGZVkJH_vH9aXxg/exec';
+
+var UI_BUILD = '2026-10-29-02';
+var STORE_KEY = 'dmkPackScanQueue';
+var SETTINGS_KEY = 'dmkPackScanSettings';
+var IS_TOUCH = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+
+var settings = loadSettings();
+var state = {
+  queue: [],
+  packed: new Set(),
+  submitting: false,
+  ready: false
+};
+
+function $(id){ return document.getElementById(id); }
+
+/* ---------------- API ---------------- */
+
+function api(action, data){
+  if (API_URL.indexOf('PASTE_') === 0) {
+    return Promise.reject(new Error('API_URL is not set in index.html'));
+  }
+  var body = Object.assign({ action: action, pin: settings.pin, user: settings.name }, data || {});
+  return fetch(API_URL, {
+    method: 'POST',
+    // text/plain avoids a CORS preflight, which Apps Script does not support
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify(body),
+    redirect: 'follow'
+  }).then(function(res){
+    if (!res.ok) throw new Error('Server HTTP ' + res.status);
+    return res.json();
+  }).then(function(r){
+    r = r || {};
+    if (r.build) $('srvBuild').textContent = r.build;
+    if (r.auth === false) {
+      showSetup('Wrong PIN. Please enter it again.');
+      throw new Error('Wrong PIN');
+    }
+    return r;
+  });
+}
+
+/* ---------------- Settings ---------------- */
+
+function loadSettings(){
+  try {
+    var s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
+    return { name: s.name || '', pin: s.pin || '' };
+  } catch (e) { return { name: '', pin: '' }; }
+}
+function saveSettings(){
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+}
+
+function showSetup(msg){
+  stopCam();
+  $('setName').value = settings.name;
+  $('setPin').value = '';
+  $('setupErr').textContent = msg || '';
+  $('setupCard').classList.remove('hidden');
+  $('app').classList.add('hidden');
+  $('userMeta').textContent = 'Setup';
+}
+
+function showApp(){
+  $('setupCard').classList.add('hidden');
+  $('app').classList.remove('hidden');
+}
+
+$('saveSetup').addEventListener('click', function(){
+  var name = $('setName').value.trim();
+  var pin = $('setPin').value.trim();
+  if (!name){ $('setupErr').textContent = 'Please enter your name.'; return; }
+  if (!pin){ $('setupErr').textContent = 'Please enter the PIN.'; return; }
+  settings.name = name; settings.pin = pin;
+  saveSettings();
+  $('setupErr').textContent = '';
+  init();
+});
+
+$('gearBtn').addEventListener('click', function(){ showSetup(''); });
+
+/* ---------------- QR parsing ---------------- */
+
+var FIELDS = ['party','orderNo','doorNo','location','flatTower','doorSize','setNo'];
+var FIELD_LABELS = {
+  party:'Party', orderNo:'Order No', doorNo:'Door No', location:'Location',
+  flatTower:'Flat / Tower', doorSize:'Door Size', setNo:'Set No'
+};
+var ALIASES = {
+  party:     ['party','partyname','customer','customername','client','clientname'],
+  orderNo:   ['orderno','order','ordernumber','orderid','ordno'],
+  doorNo:    ['doorno','door','doornumber','doorid','doorcode','labelno','id','code','barcode','qr'],
+  location:  ['location','loc','area','room'],
+  flatTower: ['flattower','flat','tower','flatno','floor','flatfloor'],
+  doorSize:  ['doorsize','size','dimension','dimensions','dims'],
+  setNo:     ['setno','set','setnumber']
+};
+
+function normKey(k){ return String(k || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function mapKey(k){
+  var n = normKey(k);
+  for (var f in ALIASES){ if (ALIASES[f].indexOf(n) !== -1) return f; }
+  return null;
+}
+
+function parseQR(raw){
+  raw = String(raw || '').replace(/\r\n?/g, '\n').trim();
+  var rec = { party:'', orderNo:'', doorNo:'', location:'', flatTower:'', doorSize:'', setNo:'', raw: raw };
+  if (!raw) return rec;
+  var obj = null;
+
+  if (/^[\[{]/.test(raw)){
+    try {
+      obj = JSON.parse(raw);
+      if (Array.isArray(obj)) obj = obj[0] || null;
+    } catch (e) { obj = null; }
+  }
+
+  if (!obj && /^https?:\/\//i.test(raw)){
+    try {
+      var u = new URL(raw);
+      obj = {};
+      u.searchParams.forEach(function(v, k){ obj[k] = v; });
+      if (u.hash && u.hash.length > 1){
+        new URLSearchParams(u.hash.slice(1)).forEach(function(v, k){ obj[k] = v; });
+      }
+    } catch (e) { obj = null; }
+  }
+
+  if (!obj){
+    var parts = raw.split('\n');
+    if (parts.length === 1 && /[|;\t]/.test(raw)) parts = raw.split(/[|;\t]/);
+    parts = parts.map(function(p){ return p.trim(); }).filter(function(p){ return p !== ''; });
+
+    var kv = {}, hits = 0;
+    parts.forEach(function(p){
+      var m = p.match(/^([^:=]+?)\s*[:=]\s*(.*)$/);
+      if (m && mapKey(m[1])){ kv[m[1]] = m[2].trim(); hits++; }
+    });
+    if (hits){
+      obj = kv;
+    } else if (parts.length >= 5){
+      obj = {};
+      FIELDS.forEach(function(f, i){ if (parts[i] != null) obj[f] = parts[i]; });
+    }
+  }
+
+  if (obj && typeof obj === 'object'){
+    Object.keys(obj).forEach(function(k){
+      var f = FIELDS.indexOf(k) !== -1 ? k : mapKey(k);
+      if (f && !rec[f]) rec[f] = String(obj[k] == null ? '' : obj[k]).trim();
+    });
+  }
+
+  if (!rec.doorNo){
+    var m2 = raw.match(/\bDMK-[A-Z0-9]+(?:-[A-Z0-9]+)*\b/i);
+    if (m2) rec.doorNo = m2[0].toUpperCase();
+    else if (!/\s/.test(raw) && raw.length <= 40 && !/^https?:/i.test(raw)) rec.doorNo = raw.toUpperCase();
+  }
+  return rec;
+}
+
+function keyOf(r){
+  var d = String(r.doorNo || '').trim().toUpperCase();
+  if (d) return 'D:' + d;
+  var raw = String(r.raw || '').trim();
+  return raw ? 'R:' + raw : '';
+}
+
+/* ---------------- Camera scanning ---------------- */
+
+var cam = null, fileScanner = null;
+var camOn = false, camBusy = false;
+var lastText = '', lastTime = 0;
+var COOLDOWN_MS = 3000;
+
+function scannerConfig(){
+  return { verbose: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } };
+}
+
+function onCamDecoded(text){
+  var now = Date.now();
+  if (text === lastText && now - lastTime < COOLDOWN_MS) return;
+  lastText = text; lastTime = now;
+  var r = $('reader');
+  r.classList.remove('flash'); void r.offsetWidth; r.classList.add('flash');
+  handleScan(text);
+}
+
+function setCamUi(on){
+  $('reader').classList.toggle('hidden', !on);
+  $('camState').classList.toggle('hidden', !on);
+  $('camBtn').textContent = on ? '⏹ Stop Camera' : '📷 Start Camera Scan';
+  $('camBtn').className = on ? 'btn btn-stop' : 'btn btn-primary';
+}
+
+function startCam(){
+  if (camOn || camBusy) return;
+  if (typeof Html5Qrcode === 'undefined'){
+    toast('Scanner library did not load. Check internet and reload.', 'err', 6000);
+    return;
+  }
+  unlockAudio();
+  camBusy = true;
+  $('camBtn').disabled = true; $('camBtn').textContent = 'Starting camera…';
+  $('reader').classList.remove('hidden');
+  if (!cam) cam = new Html5Qrcode('reader', scannerConfig());
+
+  cam.start(
+    { facingMode: 'environment' },
+    {
+      fps: 12,
+      qrbox: function(w, h){
+        var s = Math.floor(Math.min(w, h) * 0.75);
+        return { width: s, height: s };
+      }
+    },
+    onCamDecoded,
+    function(){}
+  ).then(function(){
+    camOn = true; camBusy = false;
+    $('camBtn').disabled = false;
+    setCamUi(true);
+  }).catch(function(err){
+    camBusy = false;
+    $('camBtn').disabled = false;
+    setCamUi(false);
+    toast('Camera could not start: ' + (err && err.message ? err.message : err) +
+          '. Allow camera in browser settings, or use "Scan from Photo".', 'err', 8000);
+  });
+}
+
+function stopCam(){
+  if (!cam || !camOn) return;
+  camBusy = true;
+  cam.stop().catch(function(){}).then(function(){
+    camOn = false; camBusy = false;
+    setCamUi(false);
+  });
+}
+
+$('camBtn').addEventListener('click', function(){ camOn ? stopCam() : startCam(); });
+
+// Stop camera when the tab is hidden (saves battery), resume when back
+var resumeCam = false;
+document.addEventListener('visibilitychange', function(){
+  if (document.hidden && camOn){ resumeCam = true; stopCam(); }
+  else if (!document.hidden && resumeCam){ resumeCam = false; startCam(); }
+});
+
+$('photoInput').addEventListener('change', function(){
+  var file = this.files && this.files[0];
+  var el = this;
+  if (!file) return;
+  if (typeof Html5Qrcode === 'undefined'){
+    toast('Scanner library did not load. Check internet and reload.', 'err', 6000);
+    return;
+  }
+  unlockAudio();
+  if (!fileScanner) fileScanner = new Html5Qrcode('fileReader', scannerConfig());
+  toast('Reading QR from photo…', '', 2000);
+  fileScanner.scanFile(file, false)
+    .then(function(text){ handleScan(text); })
+    .catch(function(){
+      beep(false);
+      toast('No QR found in the photo. Take it closer, straight and in good light.', 'err', 6000);
+    })
+    .then(function(){ el.value = ''; });
+});
+
+/* ---------------- Manual entry ---------------- */
+
+$('manualForm').addEventListener('submit', function(e){
+  e.preventDefault();
+  var v = $('scanInput').value.trim();
+  $('scanInput').value = '';
+  if (IS_TOUCH) $('scanInput').blur();
+  if (v){ unlockAudio(); handleScan(v); }
+});
+
+/* ---------------- Scan handling ---------------- */
+
+function handleScan(text){
+  if (!state.ready){ toast('Still loading, please wait…', 'err'); return; }
+  var rec = parseQR(text);
+  var key = keyOf(rec);
+  if (!key){ renderLast(rec, 'warn', 'UNREADABLE'); beep(false); return; }
+
+  if (state.packed.has(key)){
+    renderLast(rec, 'dup', 'ALREADY PACKED'); beep(false);
+    toast('Already in sheet: ' + (rec.doorNo || 'this label'), 'err');
+    return;
+  }
+  if (state.queue.some(function(q){ return keyOf(q) === key; })){
+    renderLast(rec, 'dup', 'ALREADY SCANNED'); beep(false);
+    toast('Already scanned in this batch: ' + (rec.doorNo || 'this label'), 'err');
+    return;
+  }
+
+  rec.scannedAt = new Date().toISOString();
+  rec.lookup = 'pending';
+  state.queue.unshift(rec);
+  saveQueue();
+  renderQueue();
+  renderLast(rec, 'ok', 'LOOKING UP…');
+  beep(true);
+  runLookup(rec);
+}
+
+function runLookup(rec){
+  rec.lookup = 'pending';
+  renderQueue();
+  api('lookup', { orderNo: rec.orderNo, doorNo: rec.doorNo })
+    .then(function(r){
+      if (!r.ok){
+        rec.lookup = 'error';
+        toast('Lookup failed for ' + rec.doorNo + ': ' + (r.error || 'Unknown'), 'err', 6000);
+      } else if (r.notConfigured){
+        rec.lookup = 'skip';
+      } else if (!r.found){
+        rec.lookup = 'notfound';
+      } else {
+        var d = r.rec || {};
+        FIELDS.forEach(function(f){ if (d[f]) rec[f] = d[f]; });
+        rec.lookup = 'done';
+      }
+      afterLookup(rec);
+    })
+    .catch(function(err){
+      rec.lookup = 'error';
+      if (String(err && err.message) !== 'Wrong PIN')
+        toast('Lookup failed for ' + rec.doorNo + ': ' + (err && err.message ? err.message : err), 'err', 6000);
+      afterLookup(rec);
+    });
+}
+
+function afterLookup(rec){
+  saveQueue(); renderQueue();
+  if (state.queue[0] !== rec) return;
+  if (rec.lookup === 'done') renderLast(rec, 'ok', 'ADDED');
+  else if (rec.lookup === 'notfound') renderLast(rec, 'warn', 'NOT FOUND IN MASTER');
+  else if (rec.lookup === 'error') renderLast(rec, 'warn', 'LOOKUP FAILED');
+  else renderLast(rec, 'ok', 'ADDED');
+}
+
+function pendingLookups(){
+  return state.queue.filter(function(q){ return q.lookup === 'pending'; }).length;
+}
+
+/* ---------------- Rendering ---------------- */
+
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function renderLast(rec, cls, statusText){
+  var rows = FIELDS.map(function(f){
+    return '<b>' + FIELD_LABELS[f] + '</b><span>' + (esc(rec[f]) || '<span style="color:#94a3b8">—</span>') + '</span>';
+  }).join('');
+  var rawLine = (!rec.party && !rec.orderNo && rec.raw && rec.lookup !== 'pending')
+    ? '<div class="hint" style="margin-top:10px;word-break:break-all">Raw: ' + esc(rec.raw) + '</div>' : '';
+  $('lastCard').innerHTML =
+    '<div class="label ' + cls + '">' +
+      '<span class="status">' + esc(statusText) + '</span>' +
+      '<h2>DOOR – PACKING</h2>' +
+      '<div class="kv">' + rows + '</div>' + rawLine +
+    '</div>';
+}
+
+function renderQueue(){
+  var body = $('qBody');
+  var n = state.queue.length;
+  if (!n){
+    body.innerHTML = '<tr><td colspan="9" class="empty">No scans yet.</td></tr>';
+  } else {
+    body.innerHTML = state.queue.map(function(r, i){
+      var tag = r.lookup === 'pending' ? ' <span style="color:#64748b;font-size:11px">looking up…</span>'
+              : r.lookup === 'notfound' ? ' <span style="color:#d97706;font-size:11px">not found</span>'
+              : r.lookup === 'error' ? ' <button class="retry" type="button" data-r="' + i + '">lookup failed · retry</button>' : '';
+      return '<tr>' +
+        '<td>' + (n - i) + '</td>' +
+        '<td><b>' + esc(r.doorNo) + '</b>' + tag + '</td>' +
+        '<td>' + esc(r.orderNo) + '</td>' +
+        '<td>' + esc(r.party) + '</td>' +
+        '<td>' + esc(r.location) + '</td>' +
+        '<td>' + esc(r.flatTower) + '</td>' +
+        '<td>' + esc(r.doorSize) + '</td>' +
+        '<td>' + esc(r.setNo) + '</td>' +
+        '<td class="x"><button class="xbtn" type="button" title="Remove" data-i="' + i + '">&times;</button></td>' +
+      '</tr>';
+    }).join('');
+  }
+  $('qCount').textContent = n;
+  $('submitBtn').disabled = !n || state.submitting || pendingLookups() > 0;
+}
+
+$('qBody').addEventListener('click', function(e){
+  var rb = e.target.closest('.retry');
+  if (rb){ runLookup(state.queue[Number(rb.getAttribute('data-r'))]); return; }
+  var b = e.target.closest('.xbtn');
+  if (!b) return;
+  state.queue.splice(Number(b.getAttribute('data-i')), 1);
+  saveQueue(); renderQueue();
+});
+
+$('clearBtn').addEventListener('click', function(){
+  if (!state.queue.length) return;
+  if (!confirm('Remove all ' + state.queue.length + ' scanned rows without submitting?')) return;
+  state.queue = []; saveQueue(); renderQueue();
+});
+
+/* ---------------- Submit ---------------- */
+
+$('submitBtn').addEventListener('click', function(){
+  if (!state.queue.length || state.submitting || pendingLookups() > 0) return;
+  state.submitting = true;
+  var btn = this;
+  btn.disabled = true; btn.textContent = 'Submitting…';
+
+  var payload = state.queue.slice().reverse().map(function(r){
+    return {
+      party: r.party, orderNo: r.orderNo, doorNo: r.doorNo, location: r.location,
+      flatTower: r.flatTower, doorSize: r.doorSize, setNo: r.setNo,
+      raw: r.raw, scannedAt: r.scannedAt
+    };
+  });
+
+  api('submit', { rows: payload })
+    .then(function(r){
+      state.submitting = false;
+      btn.textContent = 'Submit to Sheet';
+      if (!r.ok){
+        renderQueue();
+        toast('Submit failed: ' + (r.error || 'Unknown error'), 'err', 6000);
+        return;
+      }
+      (r.saved || []).forEach(function(k){ state.packed.add(k); });
+      state.queue = [];
+      saveQueue(); renderQueue(); updateMeta();
+      var msg = r.savedCount + ' row(s) saved · Batch ' + r.batchId;
+      if (r.skipped && r.skipped.length) msg += ' · ' + r.skipped.length + ' skipped (already packed): ' + r.skipped.join(', ');
+      toast(msg, r.skipped && r.skipped.length ? '' : 'ok', 6000);
+      $('lastCard').innerHTML = '<div class="empty">Submitted. Scan the next label.</div>';
+    })
+    .catch(function(err){
+      state.submitting = false;
+      btn.textContent = 'Submit to Sheet';
+      renderQueue();
+      if (String(err && err.message) !== 'Wrong PIN')
+        toast('Submit failed: ' + (err && err.message ? err.message : err) + '. Your scans are kept — try again.', 'err', 7000);
+    });
+});
+
+/* ---------------- Local persistence ---------------- */
+
+function saveQueue(){
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state.queue)); } catch (e) {}
+}
+function loadQueue(){
+  try {
+    var q = JSON.parse(localStorage.getItem(STORE_KEY) || '[]');
+    return Array.isArray(q) ? q : [];
+  } catch (e) { return []; }
+}
+
+/* ---------------- Feedback ---------------- */
+
+var audioCtx = null;
+function unlockAudio(){
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) {}
+}
+function beep(ok){
+  try { if (navigator.vibrate) navigator.vibrate(ok ? 80 : [200, 80, 200]); } catch (e) {}
+  try {
+    unlockAudio();
+    var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'square';
+    o.frequency.value = ok ? 1200 : 300;
+    g.gain.value = 0.08;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + (ok ? 0.12 : 0.45));
+  } catch (e) {}
+}
+
+var toastTimer = null;
+function toast(msg, cls, ms){
+  var t = $('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (cls ? ' ' + cls : '');
+  t.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.style.display = 'none'; }, ms || 3500);
+}
+
+function updateMeta(){
+  $('userMeta').textContent = settings.name + ' · ' + state.packed.size + ' packed';
+}
+
+/* ---------------- Init ---------------- */
+
+function init(){
+  if (!settings.name || !settings.pin){ showSetup(''); return; }
+  $('userMeta').textContent = 'Connecting…';
+  $('saveSetup').disabled = true;
+  api('init')
+    .then(function(r){
+      $('saveSetup').disabled = false;
+      if (!r.ok){
+        toast('Load error: ' + (r.error || 'Unknown'), 'err', 8000);
+        $('userMeta').textContent = 'Error';
+        return;
+      }
+      state.packed = new Set(r.packed || []);
+      state.ready = true;
+      showApp();
+      updateMeta();
+      state.queue.forEach(function(q){ if (q.lookup === 'pending' || q.lookup === 'error') runLookup(q); });
+    })
+    .catch(function(err){
+      $('saveSetup').disabled = false;
+      if (String(err && err.message) === 'Wrong PIN') return;
+      $('userMeta').textContent = 'Offline';
+      toast('Cannot reach server: ' + (err && err.message ? err.message : err), 'err', 8000);
+      if ($('setupCard').classList.contains('hidden')) showSetup('Cannot reach server. Check internet / API URL and try again.');
+      else $('setupErr').textContent = 'Cannot reach server. Check internet / API URL.';
+    });
+}
+
+$('uiBuild').textContent = UI_BUILD;
+state.queue = loadQueue();
+renderQueue();
+init();
+</script>
+</body>
+</html>
